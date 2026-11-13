@@ -1,3 +1,4 @@
 essai/.env
 essai/*.env
 essai/recu/
+essai/postgres/

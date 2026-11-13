@@ -4,6 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p recu && chmod 777 recu
+install -d -m 700 postgres && sudo chown 70:70 postgres
 r() { openssl rand -hex 24; }
 PG_MDP=$(r); REDIS_MDP=$(r); NEXTAUTH=$(r); CHIFFRE=$(openssl rand -base64 24); JWT=$(r)
 printf 'PG_MDP=%s\nREDIS_MDP=%s\n' "$PG_MDP" "$REDIS_MDP" > .env

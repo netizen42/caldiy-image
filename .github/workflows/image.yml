@@ -25,6 +25,9 @@ jobs:
       REF: ${{ inputs.ref }}
       WEB: ghcr.io/netizen42/caldiy-web
       API: ghcr.io/netizen42/caldiy-api
+      # À monter dès qu'un réglage de construction des bases change (arguments, Dockerfile modifié) : sinon la base
+      # gardée sur ghcr.io pour ce commit est reprise telle quelle.
+      BASE_VERSION: b1
     steps:
       - uses: actions/checkout@v4
 
@@ -47,10 +50,27 @@ jobs:
           sed -i '0,/^WORKDIR \/calcom$/s//WORKDIR \/calcom\nENV NEXT_PUBLIC_DISABLE_SIGNUP=true/' Dockerfile
           grep -n 'DISABLE_SIGNUP' Dockerfile
 
+      # Les images de base (construction de cal.diy, 30 min) sont gardées sur ghcr.io par commit et par version du
+      # workflow : une retouche des couches finales ou de l'essai ne reconstruit pas tout.
+      - name: Bases déjà construites
+        id: bases
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          B=${REF:0:12}-$BASE_VERSION
+          echo "tag=$B" >> "$GITHUB_OUTPUT"
+          for i in web api; do
+            if docker pull -q ghcr.io/netizen42/caldiy-$i-base:$B; then
+              docker tag ghcr.io/netizen42/caldiy-$i-base:$B $i-base
+              echo "$i=oui" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
       - name: Base de construction
+        if: steps.bases.outputs.web != 'oui' || steps.bases.outputs.api != 'oui'
         run: docker run -d --name pgbuild -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD=construction postgres:16-alpine
 
-      - name: Image web
+      - name: Image web (base)
+        if: steps.bases.outputs.web != 'oui'
         run: |
           docker build --network host -t web-base \
             --build-arg NEXT_PUBLIC_WEBAPP_URL=https://rdv.symind.ai \
@@ -60,22 +80,29 @@ jobs:
             --build-arg NEXT_PUBLIC_LICENSE_CONSENT=agree \
             --build-arg DATABASE_URL=postgresql://postgres:construction@127.0.0.1:5432/postgres \
             src
-          docker build -t caldiy-web:essai --build-arg BASE=web-base -f Dockerfile.web .
           docker builder prune -af >/dev/null
-          docker images
+          docker tag web-base ghcr.io/netizen42/caldiy-web-base:${{ steps.bases.outputs.tag }}
+          docker push -q ghcr.io/netizen42/caldiy-web-base:${{ steps.bases.outputs.tag }}
           df -h /
 
-      - name: Image API v2
+      - name: Image API v2 (base)
+        if: steps.bases.outputs.api != 'oui'
         run: |
           docker build --network host -t api-base -f src/apps/api/v2/Dockerfile \
             --build-arg DATABASE_URL=postgresql://postgres:construction@127.0.0.1:5432/postgres \
             --build-arg DATABASE_DIRECT_URL=postgresql://postgres:construction@127.0.0.1:5432/postgres \
             src
-          docker build -t caldiy-api:essai --build-arg BASE=api-base -f Dockerfile.api .
           docker builder prune -af >/dev/null
-          docker rm -f pgbuild
-          docker images
+          docker tag api-base ghcr.io/netizen42/caldiy-api-base:${{ steps.bases.outputs.tag }}
+          docker push -q ghcr.io/netizen42/caldiy-api-base:${{ steps.bases.outputs.tag }}
           df -h /
+
+      - name: Couches finales
+        run: |
+          docker rm -f pgbuild 2>/dev/null || true
+          docker build -t caldiy-web:essai --build-arg BASE=web-base -f Dockerfile.web .
+          docker build -t caldiy-api:essai --build-arg BASE=api-base -f Dockerfile.api .
+          docker images
 
       - name: Essai dans les conditions du serveur
         run: bash essai/essai.sh

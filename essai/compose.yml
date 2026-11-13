@@ -1,20 +1,27 @@
-# Essai des images dans les conditions du serveur : comptes sans droits, sans capacités, mémoire bornée, base et Redis
-# sur un réseau interne. Plus un récepteur de webhooks et une boîte mail de test (mailpit), propres à l'essai.
+# Essai des images dans les conditions du serveur (_outils/caldiy/docker-compose.yml du repo claude-code) : comptes
+# sans droits, sans capacités, mémoire bornée. Plus un récepteur de webhooks et une boîte mail de test (mailpit).
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.16-alpine@sha256:0adbf25a9e96d38823bb813f3ac0ed41fadb665c88f1df7fe6dbfb060cbdc106
+    user: "70:70"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     environment:
       POSTGRES_USER: caldiy
       POSTGRES_PASSWORD: ${PG_MDP}
       POSTGRES_DB: caldiy
+    volumes: ["./postgres:/var/lib/postgresql/data"]
     ports: ["127.0.0.1:5434:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U caldiy -d caldiy"]
       interval: 5s
       retries: 30
   redis:
-    image: redis:7-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--requirepass", "${REDIS_MDP}"]
+    image: redis:7.4.12-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
+    user: "65534:65534"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--requirepass", "${REDIS_MDP}", "--maxmemory", "64mb"]
   mailpit:
     image: axllent/mailpit:v1.21
     ports: ["127.0.0.1:8025:8025"]
