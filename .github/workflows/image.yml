@@ -29,7 +29,7 @@ jobs:
       # gardée sur ghcr.io pour ce commit est reprise telle quelle.
       BASE_VERSION: b2
       # Version de l'habillage des mails (charte-mails.py), propre à la base web : la monter reconstruit le web seul.
-      MAILS_VERSION: m1
+      MAILS_VERSION: m2
     steps:
       - uses: actions/checkout@v4
 

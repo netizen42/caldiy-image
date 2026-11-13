@@ -138,6 +138,11 @@ remplacer(B, '''                            fontSize: 16,
 I = "src/components/Info.tsx"
 remplacer(I, '''        <p style={{ color: "#101010" }}>''',
           '''        <p style={{ color: "#6B6F77", fontSize: "13px", lineHeight: "18px", fontWeight: 500, margin: "4px 0 4px" }}>''')
+# Libellé des questions du formulaire (téléphone, projet) : HTML sans <p> imbriqué, sinon le navigateur casse la
+# rubrique et le libellé sort en gros texte noir (essai réel du 13/11).
+remplacer(I, "{props.isLabelHTML ? <StyledHtmlContent htmlContent={safeLabel} /> : props.label}",
+          '{props.isLabelHTML ? (\n            <span dangerouslySetInnerHTML={{ __html: (safeLabel || "").replace(/<\\/?p[^>]*>/g, "") }} />\n'
+          '          ) : (\n            props.label\n          )}')
 remplacer(I, '''            color: "#101010",
             fontWeight: 400,
             lineHeight: "24px",''', '''            color: "#0E1113",
