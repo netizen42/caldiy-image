@@ -27,7 +27,7 @@ jobs:
       API: ghcr.io/netizen42/caldiy-api
       # À monter dès qu'un réglage de construction des bases change (arguments, Dockerfile modifié) : sinon la base
       # gardée sur ghcr.io pour ce commit est reprise telle quelle.
-      BASE_VERSION: b1
+      BASE_VERSION: b2
     steps:
       - uses: actions/checkout@v4
 
@@ -48,6 +48,8 @@ jobs:
           git log -1 --format='%H %cd %s'
           # Inscription fermée, figée à la construction (Next.js lit les NEXT_PUBLIC_ au build) : un seul compte, Adrien.
           sed -i '0,/^WORKDIR \/calcom$/s//WORKDIR \/calcom\nENV NEXT_PUBLIC_DISABLE_SIGNUP=true/' Dockerfile
+          # Nom affiché au prospect (formulaire, mails, titres) : Symind, pas Cal.diy ni Cal.com, Inc.
+          sed -i '0,/^ENV NEXT_PUBLIC_DISABLE_SIGNUP=true$/s//ENV NEXT_PUBLIC_DISABLE_SIGNUP=true NEXT_PUBLIC_APP_NAME=Symind NEXT_PUBLIC_COMPANY_NAME=Symind NEXT_PUBLIC_SENDGRID_SENDER_NAME=Symind NEXT_PUBLIC_WEBSITE_URL=https:\/\/www.symind.ai NEXT_PUBLIC_SUPPORT_MAIL_ADDRESS=adrien.beun@symind.ai/' Dockerfile
           grep -n 'DISABLE_SIGNUP' Dockerfile
 
       # Les images de base (construction de cal.diy, 30 min) sont gardées sur ghcr.io par commit et par version du
