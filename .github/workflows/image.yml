@@ -1,0 +1,102 @@
+# Construit les images de Cal.diy (édition libre de Cal.com, licence MIT) pour rdv.symind.ai, puis les essaie dans
+# les mêmes conditions que sur le serveur (compte sans droits, sans capacités, mémoire bornée) avant de les publier.
+# Cal.diy ne publie pas d'image toute faite : on la construit ici, à partir d'un commit précis du dépôt officiel.
+name: Image Cal.diy
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "commit complet de calcom/cal.diy"
+        required: true
+      publier:
+        description: "publier sur ghcr.io si l'essai passe (oui/non)"
+        default: "oui"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    env:
+      REF: ${{ inputs.ref }}
+      WEB: ghcr.io/netizen42/caldiy-web
+      API: ghcr.io/netizen42/caldiy-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Place sur le disque
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost /usr/share/swift /usr/local/.ghcup
+          docker system prune -af >/dev/null
+          df -h /
+
+      - name: Source cal.diy
+        run: |
+          echo "$REF" | grep -Eq '^[0-9a-f]{40}$' || { echo "commit complet attendu"; exit 1; }
+          git init -q src
+          cd src
+          git remote add origin https://github.com/calcom/cal.diy
+          git fetch -q --depth 1 origin "$REF"
+          git checkout -q FETCH_HEAD
+          git log -1 --format='%H %cd %s'
+          # Inscription fermée, figée à la construction (Next.js lit les NEXT_PUBLIC_ au build) : un seul compte, Adrien.
+          sed -i '0,/^WORKDIR \/calcom$/s//WORKDIR \/calcom\nENV NEXT_PUBLIC_DISABLE_SIGNUP=true/' Dockerfile
+          grep -n 'DISABLE_SIGNUP' Dockerfile
+
+      - name: Base de construction
+        run: docker run -d --name pgbuild -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD=construction postgres:16-alpine
+
+      - name: Image web
+        run: |
+          docker build --network host -t web-base \
+            --build-arg NEXT_PUBLIC_WEBAPP_URL=https://rdv.symind.ai \
+            --build-arg NEXT_PUBLIC_WEBSITE_TERMS_URL=https://www.symind.ai/cgv \
+            --build-arg NEXT_PUBLIC_WEBSITE_PRIVACY_POLICY_URL=https://www.symind.ai/politique-confidentialite \
+            --build-arg CALCOM_TELEMETRY_DISABLED=1 \
+            --build-arg NEXT_PUBLIC_LICENSE_CONSENT=agree \
+            --build-arg DATABASE_URL=postgresql://postgres:construction@127.0.0.1:5432/postgres \
+            src
+          docker build -t caldiy-web:essai --build-arg BASE=web-base -f Dockerfile.web .
+          docker builder prune -af >/dev/null
+          docker images
+          df -h /
+
+      - name: Image API v2
+        run: |
+          docker build --network host -t api-base -f src/apps/api/v2/Dockerfile \
+            --build-arg DATABASE_URL=postgresql://postgres:construction@127.0.0.1:5432/postgres \
+            --build-arg DATABASE_DIRECT_URL=postgresql://postgres:construction@127.0.0.1:5432/postgres \
+            src
+          docker build -t caldiy-api:essai --build-arg BASE=api-base -f Dockerfile.api .
+          docker builder prune -af >/dev/null
+          docker rm -f pgbuild
+          docker images
+          df -h /
+
+      - name: Essai dans les conditions du serveur
+        run: bash essai/essai.sh
+
+      - name: Journaux en cas d'échec
+        if: failure()
+        run: |
+          cd essai
+          docker compose ps -a || true
+          docker compose logs --tail 300 || true
+
+      - name: Publication
+        if: inputs.publier == 'oui'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          C=${REF:0:12}
+          for i in web api; do
+            N=ghcr.io/netizen42/caldiy-$i
+            docker tag caldiy-$i:essai $N:$C
+            docker push -q $N:$C
+            docker inspect --format '{{index .RepoDigests 0}}' $N:$C | tee -a empreintes.txt
+          done
+          echo "### Images publiées" >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^/    /' empreintes.txt >> "$GITHUB_STEP_SUMMARY"

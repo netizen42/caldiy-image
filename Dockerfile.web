@@ -1,0 +1,15 @@
+# Couche finale de l'image web : démarrage sans root. L'image de base (Dockerfile de cal.diy) tourne en root et réécrit
+# ses fichiers au démarrage ; ici l'adresse est figée à la construction, rien n'est réécrit, seul le cache de Next.js
+# est inscriptible.
+ARG BASE
+FROM ${BASE}
+COPY entree-web.sh /usr/local/bin/entree-web
+RUN chmod 755 /usr/local/bin/entree-web \
+ && mkdir -p /calcom/apps/web/.next/cache \
+ && chown -R 1000:1000 /calcom/apps/web/.next/cache
+USER 1000:1000
+ENV NODE_ENV=production HOME=/home/node
+EXPOSE 3000
+HEALTHCHECK --interval=1m --timeout=10s --start-period=5m --retries=3 \
+  CMD wget -q --spider http://127.0.0.1:3000/auth/login || exit 1
+CMD ["/usr/local/bin/entree-web"]

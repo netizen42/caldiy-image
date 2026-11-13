@@ -1,0 +1,10 @@
+# Couche finale de l'image API v2 : démarrage sans root, directement par node (sans yarn, qui écrirait son état).
+ARG BASE
+FROM ${BASE}
+USER node
+WORKDIR /calcom/apps/api/v2
+ENV NODE_ENV=production API_PORT=5555
+EXPOSE 5555
+HEALTHCHECK --interval=1m --timeout=10s --start-period=3m --retries=3 \
+  CMD wget -q -O /dev/null http://127.0.0.1:5555/health || exit 1
+CMD ["node", "./dist/apps/api/v2/src/main.js"]
