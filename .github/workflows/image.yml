@@ -28,6 +28,8 @@ jobs:
       # À monter dès qu'un réglage de construction des bases change (arguments, Dockerfile modifié) : sinon la base
       # gardée sur ghcr.io pour ce commit est reprise telle quelle.
       BASE_VERSION: b2
+      # Version de l'habillage des mails (charte-mails.py), propre à la base web : la monter reconstruit le web seul.
+      MAILS_VERSION: m1
     steps:
       - uses: actions/checkout@v4
 
@@ -51,6 +53,8 @@ jobs:
           # Nom affiché au prospect (formulaire, mails, titres) : Symind, pas Cal.diy ni Cal.com, Inc.
           sed -i '0,/^ENV NEXT_PUBLIC_DISABLE_SIGNUP=true$/s//ENV NEXT_PUBLIC_DISABLE_SIGNUP=true NEXT_PUBLIC_APP_NAME=Symind NEXT_PUBLIC_COMPANY_NAME=Symind NEXT_PUBLIC_SENDGRID_SENDER_NAME=Symind NEXT_PUBLIC_WEBSITE_URL=https:\/\/www.symind.ai NEXT_PUBLIC_SUPPORT_MAIL_ADDRESS=adrien.beun@symind.ai/' Dockerfile
           grep -n 'DISABLE_SIGNUP' Dockerfile
+          # Mails à la charte Symind (bandeau, polices, couleurs, dates en français) : échoue si un gabarit a changé.
+          python3 ../charte-mails.py .
 
       # Les images de base (construction de cal.diy, 30 min) sont gardées sur ghcr.io par commit et par version du
       # workflow : une retouche des couches finales ou de l'essai ne reconstruit pas tout.
@@ -60,9 +64,11 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           B=${REF:0:12}-$BASE_VERSION
           echo "tag=$B" >> "$GITHUB_OUTPUT"
+          echo "tagweb=$B-$MAILS_VERSION" >> "$GITHUB_OUTPUT"
           for i in web api; do
-            if docker pull -q ghcr.io/netizen42/caldiy-$i-base:$B; then
-              docker tag ghcr.io/netizen42/caldiy-$i-base:$B $i-base
+            T=$B; [ $i = web ] && T=$B-$MAILS_VERSION
+            if docker pull -q ghcr.io/netizen42/caldiy-$i-base:$T; then
+              docker tag ghcr.io/netizen42/caldiy-$i-base:$T $i-base
               echo "$i=oui" >> "$GITHUB_OUTPUT"
             fi
           done
@@ -83,8 +89,8 @@ jobs:
             --build-arg DATABASE_URL=postgresql://postgres:construction@127.0.0.1:5432/postgres \
             src
           docker builder prune -af >/dev/null
-          docker tag web-base ghcr.io/netizen42/caldiy-web-base:${{ steps.bases.outputs.tag }}
-          docker push -q ghcr.io/netizen42/caldiy-web-base:${{ steps.bases.outputs.tag }}
+          docker tag web-base ghcr.io/netizen42/caldiy-web-base:${{ steps.bases.outputs.tagweb }}
+          docker push -q ghcr.io/netizen42/caldiy-web-base:${{ steps.bases.outputs.tagweb }}
           df -h /
 
       - name: Image API v2 (base)
